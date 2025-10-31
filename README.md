@@ -38,6 +38,11 @@ services:
       - /path/to/ssh/key/id_rsa_nas_backup:/root/.ssh/id_rsa_nas_backup:ro
 ```
 
+## Install from the command line
+
+```console
+docker pull ghcr.io/buzzmoody/transfer-watcher:latest
+```
 ---
 
 **License:** MIT  
