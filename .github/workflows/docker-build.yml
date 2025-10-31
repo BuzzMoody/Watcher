@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch: # allows manual triggering
+  workflow_dispatch:  # allows manual triggering
 
 jobs:
   build:
@@ -21,16 +21,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 👇 NEW STEP TO CONVERT TO LOWERCASE
-      - name: Convert repository owner to lowercase
-        id: repo_owner_case
-        run: |
-          echo "LOWERCASE_OWNER=${{ github.repository_owner,, }}" >> $GITHUB_OUTPUT
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          # 👇 USE THE OUTPUT FROM THE PREVIOUS STEP
-          tags: ghcr.io/${{ steps.repo_owner_case.outputs.LOWERCASE_OWNER }}/transfer-watcher:latest
+          tags: ghcr.io/buzzmoody/transfer-watcher:latest
