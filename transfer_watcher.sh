@@ -26,7 +26,7 @@ EVENTS_FILE="/tmp/transfer_watcher_events.txt"
 
 # --- Time helper ---
 CURRENT_TIME() {
-    date '+%I:%M %p %d/%m/%y' | sed -E 's/(\s|\/)0/\1/g; s/^0//'
+    date '+%d/%m/%y %I:%M %p' | sed -E 's/(\s|\/)0/\1/g; s/^0//'
 }
 
 echo "Monitoring:          📤 $SOURCE_DIR"
@@ -81,13 +81,13 @@ trap cleanup SIGINT SIGTERM EXIT
 
 # --- Start watcher in background ---
 # CRITICAL FIX 1: Use '%f' format to output only the filename/relative path
-inotifywait -m -r -q -q -e close_write -e moved_to --format '%f' "$SOURCE_DIR" |
-while read -r filename; do
+inotifywait -m -r -e close_write -e moved_to --format '%w%f' "$SOURCE_DIR" |
+while read -r filename_with_path; do
     # Reconstruct the full path to check if it's a file
-    file="$SOURCE_DIR/$filename"
+    file="$SOURCE_DIR/$filename_with_path"
     
     # Only record if it's a regular file, writing the relative path to the events file
-    [ -f "$file" ] && echo "$filename" >> "$EVENTS_FILE"
+    [ -f "$file" ] && echo "$filename_with_path" >> "$EVENTS_FILE"
 done &
 
 # --- Main sync loop ---
