@@ -30,6 +30,9 @@ echo "Bandwidth limit:   ${BWLIMIT_KB} KB/s"
 echo "Sync interval:     ${SYNC_INTERVAL}s"
 echo "------------------------------------------------------------"
 
+touch /root/.ssh/known_hosts
+chmod 600 /root/.ssh/known_hosts
+
 # --- Preflight checks ---
 for cmd in inotifywait rsync ssh; do
     if ! command -v "$cmd" &>/dev/null; then
