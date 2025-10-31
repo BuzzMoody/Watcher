@@ -33,7 +33,7 @@ echo "Monitoring:          📤 $SOURCE_DIR"
 echo "Destination:         📥 $REMOTE_DEST"
 echo "Bandwidth limit:     🌐 ${BWLIMIT_KB} KB/s (${BWLIMIT_MB} Mbit/s)"
 echo "Sync interval:       ⏰ ${SYNC_INTERVAL}s"
-
+echo "-"
 echo "$(CURRENT_TIME) | 🔌 Starting transfer watcher"
 
 # --- Preflight checks ---
@@ -66,6 +66,8 @@ else
     echo "$(CURRENT_TIME) | ❗ NOTE: This may not indicate a real failure — rsync may still succeed later."
 fi
 
+echo "-"
+
 # Ensure event file exists and is empty
 > "$EVENTS_FILE"
 
@@ -81,13 +83,22 @@ trap cleanup SIGINT SIGTERM EXIT
 
 # --- Start watcher in background ---
 # CRITICAL FIX 1: Use '%f' format to output only the filename/relative path
-inotifywait -m -r -e close_write -e moved_to --format '%w%f' "$SOURCE_DIR" |
-while read -r filename_with_path; do
-    # Reconstruct the full path to check if it's a file
-    file="$SOURCE_DIR/$filename_with_path"
+inotifywait -m -r -q -e close_write -e moved_to --format '%w%f' "$SOURCE_DIR" |
+# Read the output into a variable named 'absolute_path' for clarity
+while read -r absolute_path; do
     
-    # Only record if it's a regular file, writing the relative path to the events file
-    [ -f "$file" ] && echo "$filename_with_path" >> "$EVENTS_FILE"
+    # 1. Check if the absolute path is a regular file
+    if [ -f "$absolute_path" ]; then
+        
+        # 2. Extract the relative path by removing the $SOURCE_DIR and the following slash.
+        # This relative path (e.g., 'subdir/newfile.txt') is required for rsync --files-from.
+        relative_path="${absolute_path#$SOURCE_DIR/}"
+		
+		# echo "$(CURRENT_TIME) | 🔍 Detected new file: $relative_path"
+
+        # 3. Write the relative path to the events file
+        echo "$relative_path" >> "$EVENTS_FILE"
+    fi
 done &
 
 # --- Main sync loop ---
@@ -111,10 +122,12 @@ while true; do
         "$REMOTE_DEST" >/dev/null 2>&1; then
         
         echo "$(CURRENT_TIME) | ✅ SUCCESS: Batch sync complete. Transferred $(wc -l < "$EVENTS_FILE") files."
+		echo "-"
         
         # Clear the event file only on successful transfer
         > "$EVENTS_FILE"
     else
         echo "$(CURRENT_TIME) | ❌ ERROR: Batch sync failed. Files remain in event list for next attempt."
+		echo "-"
     fi
 done
