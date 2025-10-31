@@ -23,6 +23,7 @@ jobs:
 
       # 👇 NEW STEP TO CONVERT TO LOWERCASE
       - name: Convert repository owner to lowercase
+        id: repo_owner_case
         run: |
           echo "LOWERCASE_OWNER=${{ github.repository_owner,, }}" >> $GITHUB_OUTPUT
 
