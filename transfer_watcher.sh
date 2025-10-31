@@ -13,7 +13,7 @@ SSH_KEY="/root/.ssh/id_rsa_nas_backup"
 SSH_PORT="222"
 
 BWLIMIT_KB="${BWLIMIT_KB:-9375}"
-BWLIMIT_MB=$(echo "scale=2; ${BWLIMIT_KB} / 125" | bc)
+BWLIMIT_MB=$(echo "scale=0; ${BWLIMIT_KB} / 125" | bc)
 
 # Sync interval (seconds)
 SYNC_INTERVAL="${SYNC_INTERVAL:-10}"
@@ -32,7 +32,7 @@ echo "Destination:       📥 $REMOTE_DEST"
 echo "Bandwidth limit:   🌐 ${BWLIMIT_KB} KB/s (${BWLIMIT_MB} Mbit/s)"
 echo "Sync interval:     ⏰ ${SYNC_INTERVAL}s"
 
-echo -e "\n$(CURRENT_TIME) | 🔌 Starting transfer watcher"
+echo "$(CURRENT_TIME) | 🔌 Starting transfer watcher"
 
 # --- Preflight checks ---
 for cmd in inotifywait rsync ssh; do
@@ -52,16 +52,16 @@ chmod 600 /root/.ssh/known_hosts
 REMOTE_HOST="${REMOTE_DEST%%:*}"
 
 # --- Remote connectivity check (quiet) ---
-echo -e "\n$(CURRENT_TIME) | 🔒 Checking SSH connectivity..."
+echo "$(CURRENT_TIME) | 🔒 Checking SSH connectivity..."
 if ssh -p "$SSH_PORT" -i "$SSH_KEY" \
     -o StrictHostKeyChecking=accept-new \
     -o UserKnownHostsFile=/root/.ssh/known_hosts \
     -o ConnectTimeout=5 \
     "$REMOTE_HOST" "exit" >/dev/null 2>&1; then
-    echo -e "$(CURRENT_TIME) | ✅ Remote connection OK.\n"
+    echo "$(CURRENT_TIME) | ✅ Remote connection OK."
 else
     echo "$(CURRENT_TIME) | ❌ WARNING: SSH connectivity test failed."
-    echo -e "$(CURRENT_TIME) | ❗ NOTE: This may not indicate a real failure — rsync may still succeed later.\n"
+    echo "$(CURRENT_TIME) | ❗ NOTE: This may not indicate a real failure — rsync may still succeed later."
 fi
 
 # Ensure event file exists and is empty
@@ -100,9 +100,9 @@ while true; do
         --remove-source-files \
         "$SOURCE_DIR"/ \
         "$REMOTE_DEST" >/dev/null 2>&1; then
-        echo -e "$(CURRENT_TIME) | ✅ SUCCESS: Batch sync complete.\n"
+        echo "$(CURRENT_TIME) | ✅ SUCCESS: Batch sync complete."
         > "$EVENTS_FILE"
     else
-        echo -e "$(CURRENT_TIME) | ❌ ERROR: Batch sync failed.\n"
+        echo "$(CURRENT_TIME) | ❌ ERROR: Batch sync failed."
     fi
 done
