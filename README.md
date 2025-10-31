@@ -22,11 +22,12 @@
 ## Docker Compose Example
 
 ```yaml
-version: "3.9"
+version: '3.8'
 services:
-  transfer-watcher:
-    build: .
-    container_name: transfer-watcher
+  rsync-watcher:
+    image: ghcr.io/buzzmoody/transfer-watcher:latest
+    container_name: watcher
+    restart: always
     environment:
       - SOURCE_DIR=/data/source
       - REMOTE_DEST=user@remotehost:/data/backup
@@ -35,7 +36,6 @@ services:
     volumes:
       - /path/to/local/source:/data/source
       - /path/to/ssh/key/id_rsa_nas_backup:/root/.ssh/id_rsa_nas_backup:ro
-    restart: unless-stopped
 ```
 
 ---
