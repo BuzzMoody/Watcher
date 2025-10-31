@@ -14,6 +14,7 @@ SSH_PORT="222"
 
 # Bandwidth limit (in KB/s). Default: 9375 KB/s ≈ 75 Mbit/s
 BWLIMIT_KB="${BWLIMIT_KB:-9375}"
+BWLIMIT_MB=$(echo "scale=2; ${BWLIMIT_KB} / 1024" | bc)
 
 # Sync interval (seconds)
 SYNC_INTERVAL="${SYNC_INTERVAL:-10}"
@@ -24,16 +25,14 @@ EVENTS_FILE="/tmp/transfer_watcher_events.txt"
 # --- Time helper ---
 CURRENT_TIME() {
     # Ensures all date outputs respect the container TZ
-    date '+%Y-%m-%d %H:%M:%S'
+    date '+%d-%m-%Y %H:%M:%S'
 }
 
-echo "------------------------------------------------------------"
 echo "$(CURRENT_TIME) | Starting transfer watcher"
-echo "Monitoring:        $SOURCE_DIR"
-echo "Destination:       $REMOTE_DEST"
-echo "Bandwidth limit:   ${BWLIMIT_KB} KB/s"
-echo "Sync interval:     ${SYNC_INTERVAL}s"
-echo "------------------------------------------------------------"
+echo "Monitoring:        📤 $SOURCE_DIR"
+echo "Destination:       📥 $REMOTE_DEST"
+echo "Bandwidth limit:   🌐 ${BWLIMIT_KB} KB/s (${BWLIMIT_MB} MB/s)"
+echo "Sync interval:     ⏰ ${SYNC_INTERVAL}s"
 
 # --- Preflight checks ---
 for cmd in inotifywait rsync ssh; do
@@ -53,17 +52,16 @@ chmod 600 /root/.ssh/known_hosts
 REMOTE_HOST="${REMOTE_DEST%%:*}"
 
 # --- Remote connectivity check (quiet) ---
-echo "------------------------------------------------------------"
-echo "$(CURRENT_TIME) | Checking SSH connectivity..."
+echo -e "\n$(CURRENT_TIME) | 🔒 Checking SSH connectivity..."
 if ssh -p "$SSH_PORT" -i "$SSH_KEY" \
     -o StrictHostKeyChecking=accept-new \
     -o UserKnownHostsFile=/root/.ssh/known_hosts \
     -o ConnectTimeout=5 \
     "$REMOTE_HOST" "exit" >/dev/null 2>&1; then
-    echo "$(CURRENT_TIME) | Remote connection OK."
+    echo "$(CURRENT_TIME) | ✅ Remote connection OK."
 else
-    echo "$(CURRENT_TIME) | WARNING: SSH connectivity test failed."
-    echo "NOTE: This may not indicate a real failure — rsync may still succeed later."
+    echo "$(CURRENT_TIME) | ❌ WARNING: SSH connectivity test failed."
+    echo "$(CURRENT_TIME) | ❗ NOTE: This may not indicate a real failure — rsync may still succeed later."
 fi
 echo "------------------------------------------------------------"
 
@@ -87,9 +85,6 @@ while read -r file; do
     [ -f "$file" ] && echo "$file" >> "$EVENTS_FILE"
 done &
 
-WATCHER_PID=$!
-echo "$(CURRENT_TIME) | Watcher PID: $WATCHER_PID"
-
 # --- Main sync loop ---
 while true; do
     sleep "$SYNC_INTERVAL"
@@ -99,16 +94,16 @@ while true; do
         continue
     fi
 
-    echo "$(CURRENT_TIME) | Detected file changes. Starting batch sync..."
+    echo "$(CURRENT_TIME) | 📂 Detected file changes. Starting batch sync..."
 
     if rsync -av --bwlimit="$BWLIMIT_KB" \
         -e "ssh -p $SSH_PORT -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
         --remove-source-files \
         "$SOURCE_DIR"/ \
         "$REMOTE_DEST" >/dev/null 2>&1; then
-        echo "$(CURRENT_TIME) | SUCCESS: Batch sync complete."
+        echo "$(CURRENT_TIME) | ✅ SUCCESS: Batch sync complete."
         > "$EVENTS_FILE"
     else
-        echo "$(CURRENT_TIME) | ERROR: Batch sync failed."
+        echo "$(CURRENT_TIME) | ❌ ERROR: Batch sync failed."
     fi
 done
