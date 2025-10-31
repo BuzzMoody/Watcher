@@ -12,9 +12,8 @@ REMOTE_DEST="${REMOTE_DEST:?ERROR: REMOTE_DEST environment variable not set.}"
 SSH_KEY="/root/.ssh/id_rsa_nas_backup"
 SSH_PORT="222"
 
-# Bandwidth limit (in KB/s). Default: 9375 KB/s ≈ 75 Mbit/s
 BWLIMIT_KB="${BWLIMIT_KB:-9375}"
-BWLIMIT_MB=$(echo "scale=2; ${BWLIMIT_KB} / 1024" | bc)
+BWLIMIT_MB=$(echo "scale=2; ${BWLIMIT_KB} / 125" | bc)
 
 # Sync interval (seconds)
 SYNC_INTERVAL="${SYNC_INTERVAL:-10}"
@@ -28,16 +27,17 @@ CURRENT_TIME() {
     date '+%d-%m-%Y %H:%M:%S'
 }
 
-echo "$(CURRENT_TIME) | Starting transfer watcher"
 echo "Monitoring:        📤 $SOURCE_DIR"
 echo "Destination:       📥 $REMOTE_DEST"
-echo "Bandwidth limit:   🌐 ${BWLIMIT_KB} KB/s (${BWLIMIT_MB} MB/s)"
+echo "Bandwidth limit:   🌐 ${BWLIMIT_KB} KB/s (${BWLIMIT_MB} Mbit/s)"
 echo "Sync interval:     ⏰ ${SYNC_INTERVAL}s"
+
+echo -e "\n$(CURRENT_TIME) | 🔌 Starting transfer watcher"
 
 # --- Preflight checks ---
 for cmd in inotifywait rsync ssh; do
     if ! command -v "$cmd" &>/dev/null; then
-        echo "ERROR: Missing required command: $cmd"
+        echo "$(CURRENT_TIME) | ❌ ERROR: Missing required command: $cmd"
         exit 1
     fi
 done
@@ -58,12 +58,11 @@ if ssh -p "$SSH_PORT" -i "$SSH_KEY" \
     -o UserKnownHostsFile=/root/.ssh/known_hosts \
     -o ConnectTimeout=5 \
     "$REMOTE_HOST" "exit" >/dev/null 2>&1; then
-    echo "$(CURRENT_TIME) | ✅ Remote connection OK."
+    echo -e "$(CURRENT_TIME) | ✅ Remote connection OK.\n"
 else
     echo "$(CURRENT_TIME) | ❌ WARNING: SSH connectivity test failed."
-    echo "$(CURRENT_TIME) | ❗ NOTE: This may not indicate a real failure — rsync may still succeed later."
+    echo -e "$(CURRENT_TIME) | ❗ NOTE: This may not indicate a real failure — rsync may still succeed later.\n"
 fi
-echo "------------------------------------------------------------"
 
 # Ensure event file exists and is empty
 > "$EVENTS_FILE"
@@ -79,7 +78,7 @@ cleanup() {
 trap cleanup SIGINT SIGTERM EXIT
 
 # --- Start watcher in background ---
-inotifywait -m -r -e close_write -e moved_to --format '%w%f' "$SOURCE_DIR" |
+inotifywait -m -r -q -q -e close_write -e moved_to --format '%w%f' "$SOURCE_DIR" |
 while read -r file; do
     # Only record if it's a regular file
     [ -f "$file" ] && echo "$file" >> "$EVENTS_FILE"
@@ -101,9 +100,9 @@ while true; do
         --remove-source-files \
         "$SOURCE_DIR"/ \
         "$REMOTE_DEST" >/dev/null 2>&1; then
-        echo "$(CURRENT_TIME) | ✅ SUCCESS: Batch sync complete."
+        echo -e "$(CURRENT_TIME) | ✅ SUCCESS: Batch sync complete.\n"
         > "$EVENTS_FILE"
     else
-        echo "$(CURRENT_TIME) | ❌ ERROR: Batch sync failed."
+        echo -e "$(CURRENT_TIME) | ❌ ERROR: Batch sync failed.\n"
     fi
 done
