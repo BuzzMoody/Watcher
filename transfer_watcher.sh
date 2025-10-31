@@ -9,6 +9,8 @@ set -euo pipefail
 SOURCE_DIR="${SOURCE_DIR:?ERROR: SOURCE_DIR environment variable not set.}"
 REMOTE_DEST="${REMOTE_DEST:?ERROR: REMOTE_DEST environment variable not set.}"
 
+SOURCE_DIR=$(echo "$SOURCE_DIR" | sed 's/\/$//')
+
 SSH_KEY="/root/.ssh/id_rsa_nas_backup"
 SSH_PORT="222"
 
@@ -24,8 +26,7 @@ EVENTS_FILE="/tmp/transfer_watcher_events.txt"
 
 # --- Time helper ---
 CURRENT_TIME() {
-    # Ensures all date outputs respect the container TZ
-    date '+%d-%m-%Y %H:%M:%S'
+    date '+%l:%M %p %-d/%-m/%y'
 }
 
 echo "Monitoring:          📤 $SOURCE_DIR"
