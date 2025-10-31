@@ -13,6 +13,7 @@ SSH_KEY="/root/.ssh/id_rsa_nas_backup"
 SSH_PORT="222"
 
 BWLIMIT_KB="${BWLIMIT_KB:-9375}"
+# Calculate Mbit/s (125 KB/s = 1 Mbit/s) and ensure it's a whole number
 BWLIMIT_MB=$(echo "scale=0; ${BWLIMIT_KB} / 125" | bc)
 
 # Sync interval (seconds)
@@ -27,10 +28,10 @@ CURRENT_TIME() {
     date '+%d-%m-%Y %H:%M:%S'
 }
 
-echo "Monitoring:        📤 $SOURCE_DIR"
-echo "Destination:       📥 $REMOTE_DEST"
-echo "Bandwidth limit:   🌐 ${BWLIMIT_KB} KB/s (${BWLIMIT_MB} Mbit/s)"
-echo "Sync interval:     ⏰ ${SYNC_INTERVAL}s"
+echo "Monitoring:          📤 $SOURCE_DIR"
+echo "Destination:         📥 $REMOTE_DEST"
+echo "Bandwidth limit:     🌐 ${BWLIMIT_KB} KB/s (${BWLIMIT_MB} Mbit/s)"
+echo "Sync interval:       ⏰ ${SYNC_INTERVAL}s"
 
 echo "$(CURRENT_TIME) | 🔌 Starting transfer watcher"
 
@@ -78,10 +79,14 @@ cleanup() {
 trap cleanup SIGINT SIGTERM EXIT
 
 # --- Start watcher in background ---
-inotifywait -m -r -q -q -e close_write -e moved_to --format '%w%f' "$SOURCE_DIR" |
-while read -r file; do
-    # Only record if it's a regular file
-    [ -f "$file" ] && echo "$file" >> "$EVENTS_FILE"
+# CRITICAL FIX 1: Use '%f' format to output only the filename/relative path
+inotifywait -m -r -q -q -e close_write -e moved_to --format '%f' "$SOURCE_DIR" |
+while read -r filename; do
+    # Reconstruct the full path to check if it's a file
+    file="$SOURCE_DIR/$filename"
+    
+    # Only record if it's a regular file, writing the relative path to the events file
+    [ -f "$file" ] && echo "$filename" >> "$EVENTS_FILE"
 done &
 
 # --- Main sync loop ---
@@ -95,14 +100,20 @@ while true; do
 
     echo "$(CURRENT_TIME) | 📂 Detected file changes. Starting batch sync..."
 
+    # CRITICAL FIX 2: Use --files-from to only sync files in the EVENTS_FILE list.
+    # NOTE: SOURCE_DIR must NOT have a trailing slash when using --files-from.
     if rsync -av --bwlimit="$BWLIMIT_KB" \
         -e "ssh -p $SSH_PORT -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
         --remove-source-files \
-        "$SOURCE_DIR"/ \
+        --files-from="$EVENTS_FILE" \
+        "$SOURCE_DIR" \
         "$REMOTE_DEST" >/dev/null 2>&1; then
-        echo "$(CURRENT_TIME) | ✅ SUCCESS: Batch sync complete."
+        
+        echo "$(CURRENT_TIME) | ✅ SUCCESS: Batch sync complete. Transferred $(wc -l < "$EVENTS_FILE") files."
+        
+        # Clear the event file only on successful transfer
         > "$EVENTS_FILE"
     else
-        echo "$(CURRENT_TIME) | ❌ ERROR: Batch sync failed."
+        echo "$(CURRENT_TIME) | ❌ ERROR: Batch sync failed. Files remain in event list for next attempt."
     fi
 done
