@@ -1,7 +1,9 @@
 #!/bin/bash
 #
-# transfer_watcher.sh — Monitors a directory for new/modified files and transfers them via rsync.
+# transfer_watcher.sh — Monitor a directory for new/modified files and transfer them in batches via rsync.
 #
+
+set -euo pipefail
 
 # --- Configuration ---
 SOURCE_DIR="${SOURCE_DIR:?ERROR: SOURCE_DIR environment variable not set.}"
@@ -13,45 +15,82 @@ SSH_PORT="222"
 # Bandwidth limit (in KB/s). Default: 9375 KB/s ≈ 75 Mbit/s
 BWLIMIT_KB="${BWLIMIT_KB:-9375}"
 
-echo "--- $(date '+%Y-%m-%d %H:%M:%S') ---"
-echo "Monitoring: $SOURCE_DIR"
-echo "Destination: $REMOTE_DEST"
-echo "Bandwidth limit: ${BWLIMIT_KB} KB/s"
-echo "---"
+# Sync interval (seconds)
+SYNC_INTERVAL="${SYNC_INTERVAL:-10}"
+
+# Temporary file to hold event list
+EVENTS_FILE="/tmp/transfer_watcher_events.txt"
+
+# --- Initialization ---
+echo "------------------------------------------------------------"
+echo "$(date '+%Y-%m-%d %H:%M:%S') | Starting transfer watcher"
+echo "Monitoring:        $SOURCE_DIR"
+echo "Destination:       $REMOTE_DEST"
+echo "Bandwidth limit:   ${BWLIMIT_KB} KB/s"
+echo "Sync interval:     ${SYNC_INTERVAL}s"
+echo "------------------------------------------------------------"
 
 # --- Preflight checks ---
-if ! command -v inotifywait &>/dev/null; then
-    echo "ERROR: inotify-tools not installed. Exiting."
-    exit 1
+for cmd in inotifywait rsync ssh; do
+    if ! command -v "$cmd" &>/dev/null; then
+        echo "ERROR: Missing required command: $cmd"
+        exit 1
+    fi
+done
+
+# --- Remote check ---
+echo "Checking SSH connectivity..."
+if ! ssh -p "$SSH_PORT" -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
+        -o StrictHostKeyChecking=accept-new "$REMOTE_DEST" "exit" 2>/dev/null; then
+    echo "WARNING: Unable to reach remote destination ($REMOTE_DEST). Transfers may fail."
+else
+    echo "Remote connection OK."
 fi
+echo "------------------------------------------------------------"
 
-if ! command -v rsync &>/dev/null; then
-    echo "ERROR: rsync not installed. Exiting."
-    exit 1
-fi
+# Ensure event file exists and is empty
+> "$EVENTS_FILE"
 
-# --- Main Watcher Loop ---
-inotifywait -m -r -e close_write -e moved_to "$SOURCE_DIR" | while read -r path action file; do
-    TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+# --- Cleanup handler ---
+cleanup() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') | Shutting down watcher..."
+    pkill -P $$ || true
+    rm -f "$EVENTS_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') | Clean exit."
+    exit 0
+}
+trap cleanup SIGINT SIGTERM EXIT
 
-    # Skip directory-only events
-    if [ -z "$file" ]; then
-        echo "$TIMESTAMP | Skipping directory action on $path ($action)"
+# --- Start watcher in background ---
+inotifywait -m -r -e close_write -e moved_to --format '%w%f' "$SOURCE_DIR" |
+while read -r file; do
+    # Only record if it's a regular file
+    [ -f "$file" ] && echo "$file" >> "$EVENTS_FILE"
+done &
+
+WATCHER_PID=$!
+echo "Watcher PID: $WATCHER_PID"
+
+# --- Main sync loop ---
+while true; do
+    sleep "$SYNC_INTERVAL"
+
+    # If no events, skip
+    if [ ! -s "$EVENTS_FILE" ]; then
         continue
     fi
 
-    full_file_path="$path/$file"
-    echo "$TIMESTAMP | Event detected: $action on $full_file_path"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') | Detected changes. Starting sync..."
 
-    # --- Rsync Transfer with Bandwidth Limit ---
+    # Perform batched rsync of the full directory
     if rsync -av --bwlimit="$BWLIMIT_KB" \
-        -e "ssh -p $SSH_PORT -i $SSH_KEY -o StrictHostKeyChecking=no" \
+        -e "ssh -p $SSH_PORT -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
         --remove-source-files \
-        "$full_file_path" \
+        "$SOURCE_DIR"/ \
         "$REMOTE_DEST" >/dev/null 2>&1; then
-
-        echo "$TIMESTAMP | SUCCESS: $file transferred and removed."
+        echo "$(date '+%Y-%m-%d %H:%M:%S') | SUCCESS: Batch sync complete."
+        > "$EVENTS_FILE"
     else
-        echo "$TIMESTAMP | ERROR: Failed to transfer $file."
+        echo "$(date '+%Y-%m-%d %H:%M:%S') | ERROR: Batch sync failed."
     fi
 done
