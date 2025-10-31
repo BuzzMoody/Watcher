@@ -1,6 +1,8 @@
 # Use a lightweight base image with necessary packages
 FROM alpine:latest
 
+TZ=Australia/Melbourne
+
 # Install rsync, openssh-client (for ssh), inotify-tools, and bash
 RUN apk add --no-cache rsync openssh-client inotify-tools bash
 
