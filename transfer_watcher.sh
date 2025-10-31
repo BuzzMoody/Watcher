@@ -26,7 +26,7 @@ EVENTS_FILE="/tmp/transfer_watcher_events.txt"
 
 # --- Time helper ---
 CURRENT_TIME() {
-    date '+%l:%M %p %-d/%-m/%y'
+    date '+%I:%M %p %d/%m/%y' | sed -E 's/(\s|\/)0/\1/g; s/^0//'
 }
 
 echo "Monitoring:          📤 $SOURCE_DIR"
@@ -54,15 +54,15 @@ chmod 600 /root/.ssh/known_hosts
 REMOTE_HOST="${REMOTE_DEST%%:*}"
 
 # --- Remote connectivity check (quiet) ---
-echo "$(CURRENT_TIME) | 🔒 Checking SSH connectivity..."
+echo "$(CURRENT_TIME) | 🔑 Checking SSH connectivity..."
 if ssh -p "$SSH_PORT" -i "$SSH_KEY" \
     -o StrictHostKeyChecking=accept-new \
     -o UserKnownHostsFile=/root/.ssh/known_hosts \
     -o ConnectTimeout=5 \
     "$REMOTE_HOST" "exit" >/dev/null 2>&1; then
-    echo "$(CURRENT_TIME) | ✅ Remote connection OK."
+    echo "$(CURRENT_TIME) | 🔓 Remote connection OK."
 else
-    echo "$(CURRENT_TIME) | ❌ WARNING: SSH connectivity test failed."
+    echo "$(CURRENT_TIME) | 🔐 WARNING: SSH connectivity test failed."
     echo "$(CURRENT_TIME) | ❗ NOTE: This may not indicate a real failure — rsync may still succeed later."
 fi
 
