@@ -21,17 +21,19 @@ SYNC_INTERVAL="${SYNC_INTERVAL:-10}"
 # Temporary file to hold event list
 EVENTS_FILE="/tmp/transfer_watcher_events.txt"
 
-# --- Initialization ---
+# --- Time helper ---
+CURRENT_TIME() {
+    # Ensures all date outputs respect the container TZ
+    date '+%Y-%m-%d %H:%M:%S'
+}
+
 echo "------------------------------------------------------------"
-echo "$(date '+%Y-%m-%d %H:%M:%S') | Starting transfer watcher"
+echo "$(CURRENT_TIME) | Starting transfer watcher"
 echo "Monitoring:        $SOURCE_DIR"
 echo "Destination:       $REMOTE_DEST"
 echo "Bandwidth limit:   ${BWLIMIT_KB} KB/s"
 echo "Sync interval:     ${SYNC_INTERVAL}s"
 echo "------------------------------------------------------------"
-
-touch /root/.ssh/known_hosts
-chmod 600 /root/.ssh/known_hosts
 
 # --- Preflight checks ---
 for cmd in inotifywait rsync ssh; do
@@ -41,13 +43,27 @@ for cmd in inotifywait rsync ssh; do
     fi
 done
 
-# --- Remote check ---
-echo "Checking SSH connectivity..."
-if ! ssh -p "$SSH_PORT" -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
-        -o StrictHostKeyChecking=accept-new "$REMOTE_DEST" "exit" 2>/dev/null; then
-    echo "WARNING: Unable to reach remote destination ($REMOTE_DEST). Transfers may fail."
+# --- Prepare SSH environment ---
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+touch /root/.ssh/known_hosts
+chmod 600 /root/.ssh/known_hosts
+
+# Extract just "user@host" from REMOTE_DEST (strip ":/path")
+REMOTE_HOST="${REMOTE_DEST%%:*}"
+
+# --- Remote connectivity check (quiet) ---
+echo "------------------------------------------------------------"
+echo "$(CURRENT_TIME) | Checking SSH connectivity..."
+if ssh -p "$SSH_PORT" -i "$SSH_KEY" \
+    -o StrictHostKeyChecking=accept-new \
+    -o UserKnownHostsFile=/root/.ssh/known_hosts \
+    -o ConnectTimeout=5 \
+    "$REMOTE_HOST" "exit" >/dev/null 2>&1; then
+    echo "$(CURRENT_TIME) | Remote connection OK."
 else
-    echo "Remote connection OK."
+    echo "$(CURRENT_TIME) | WARNING: SSH connectivity test failed."
+    echo "NOTE: This may not indicate a real failure — rsync may still succeed later."
 fi
 echo "------------------------------------------------------------"
 
@@ -56,10 +72,10 @@ echo "------------------------------------------------------------"
 
 # --- Cleanup handler ---
 cleanup() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') | Shutting down watcher..."
+    echo "$(CURRENT_TIME) | Shutting down watcher..."
     pkill -P $$ || true
     rm -f "$EVENTS_FILE"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') | Clean exit."
+    echo "$(CURRENT_TIME) | Clean exit."
     exit 0
 }
 trap cleanup SIGINT SIGTERM EXIT
@@ -72,28 +88,27 @@ while read -r file; do
 done &
 
 WATCHER_PID=$!
-echo "Watcher PID: $WATCHER_PID"
+echo "$(CURRENT_TIME) | Watcher PID: $WATCHER_PID"
 
 # --- Main sync loop ---
 while true; do
     sleep "$SYNC_INTERVAL"
 
-    # If no events, skip
+    # Skip if no events
     if [ ! -s "$EVENTS_FILE" ]; then
         continue
     fi
 
-    echo "$(date '+%Y-%m-%d %H:%M:%S') | Detected changes. Starting sync..."
+    echo "$(CURRENT_TIME) | Detected file changes. Starting batch sync..."
 
-    # Perform batched rsync of the full directory
     if rsync -av --bwlimit="$BWLIMIT_KB" \
         -e "ssh -p $SSH_PORT -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
         --remove-source-files \
         "$SOURCE_DIR"/ \
         "$REMOTE_DEST" >/dev/null 2>&1; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') | SUCCESS: Batch sync complete."
+        echo "$(CURRENT_TIME) | SUCCESS: Batch sync complete."
         > "$EVENTS_FILE"
     else
-        echo "$(date '+%Y-%m-%d %H:%M:%S') | ERROR: Batch sync failed."
+        echo "$(CURRENT_TIME) | ERROR: Batch sync failed."
     fi
 done
