@@ -41,4 +41,4 @@ jobs:
           context: .
           push: true
           # Construct the full tag using the dynamically determined tag from the previous step
-          tags: ghcr.io/${{ github.repository }}:${{ steps.determine_tag.outputs.tag }}
+          tags: ghcr.io/buzzmoody/transfer-watcher:${{ steps.determine_tag.outputs.tag }}
