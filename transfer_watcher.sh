@@ -34,6 +34,8 @@ check_unsynced_files() {
 			echo "$(CURRENT_TIME) | ➕ Added unsynced file: $relative_path"
 		fi
 	done
+	
+	echo "-"
 }
 
 echo "Monitoring:          📤 $SOURCE_DIR"
