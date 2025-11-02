@@ -27,13 +27,23 @@ CURRENT_TIME() {
 check_unsynced_files() {
 	echo "$(CURRENT_TIME) | 🔎 Checking for unsynced files..."
 
-	find "$SOURCE_DIR" -type f | while read -r absolute_path; do
+	before_count=$(wc -l < "$EVENTS_FILE" 2>/dev/null || echo 0)
+
+	find "$SOURCE_DIR" -type f -print0 | while IFS= read -r -d $'\0' absolute_path; do
 		relative_path="${absolute_path#$SOURCE_DIR/}"
-		if ! grep -Fxq "$relative_path" "$EVENTS_FILE"; then
+		if ! grep -Fxq -- "$relative_path" "$EVENTS_FILE"; then
 			echo "$relative_path" >> "$EVENTS_FILE"
 			echo "$(CURRENT_TIME) | ➕ Added unsynced file: $relative_path"
 		fi
 	done
+
+	after_count=$(wc -l < "$EVENTS_FILE" 2>/dev/null || echo 0)
+
+	if [ "$before_count" -eq "$after_count" ]; then
+		echo "$(CURRENT_TIME) | ✅ No unsynced files found."
+	else
+		echo "$(CURRENT_TIME) | 📦 Found $((after_count - before_count)) unsynced file(s)."
+	fi
 	
 	echo "-"
 }
