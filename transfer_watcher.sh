@@ -21,7 +21,7 @@ SYNC_INTERVAL="${SYNC_INTERVAL:-10}"
 EVENTS_FILE="/tmp/transfer_watcher_events.txt"
 
 CURRENT_TIME() {
-	date '+%d/%m/%y %I:%M %p' | sed -E 's/(\s|/)0/\1/g; s/^0//'
+	date '+%d/%m/%y %I:%M %p' | sed -E 's/(\s|\/)0/\1/g; s/^0//'
 }
 
 check_unsynced_files() {
