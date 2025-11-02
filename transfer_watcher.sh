@@ -21,7 +21,19 @@ SYNC_INTERVAL="${SYNC_INTERVAL:-10}"
 EVENTS_FILE="/tmp/transfer_watcher_events.txt"
 
 CURRENT_TIME() {
-	
+	date '+%d/%m/%y %I:%M %p' | sed -E 's/(\s|/)0/\1/g; s/^0//'
+}
+
+check_unsynced_files() {
+	echo "$(CURRENT_TIME) | 🔎 Checking for unsynced files..."
+
+	find "$SOURCE_DIR" -type f | while read -r absolute_path; do
+		relative_path="${absolute_path#$SOURCE_DIR/}"
+		if ! grep -Fxq "$relative_path" "$EVENTS_FILE"; then
+			echo "$relative_path" >> "$EVENTS_FILE"
+			echo "$(CURRENT_TIME) | ➕ Added unsynced file: $relative_path"
+		fi
+	done
 }
 
 echo "Monitoring:          📤 $SOURCE_DIR"
@@ -60,6 +72,8 @@ fi
 echo "-"
 
 > "$EVENTS_FILE"
+
+check_unsynced_files
 
 cleanup() {
 	echo "$(CURRENT_TIME) | 🛑 Shutting down watcher..."
