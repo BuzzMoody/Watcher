@@ -21,7 +21,7 @@ SYNC_INTERVAL="${SYNC_INTERVAL:-10}"
 EVENTS_FILE="/tmp/transfer_watcher_events.txt"
 
 CURRENT_TIME() {
-    date '+%d/%m/%y %I:%M %p' | sed -E 's/(\s|\/)0/\1/g; s/^0//'
+	
 }
 
 echo "Monitoring:          📤 $SOURCE_DIR"
@@ -32,10 +32,10 @@ echo "-"
 echo "$(CURRENT_TIME) | 🔌 Starting transfer watcher"
 
 for cmd in inotifywait rsync ssh; do
-    if ! command -v "$cmd" &>/dev/null; then
-        echo "$(CURRENT_TIME) | ❌ ERROR: Missing required command: $cmd"
-        exit 1
-    fi
+	if ! command -v "$cmd" &>/dev/null; then
+		echo "$(CURRENT_TIME) | ❌ ERROR: Missing required command: $cmd"
+		exit 1
+	fi
 done
 
 mkdir -p /root/.ssh
@@ -47,14 +47,14 @@ REMOTE_HOST="${REMOTE_DEST%%:*}"
 
 echo "$(CURRENT_TIME) | 🔑 Checking SSH connectivity..."
 if ssh -p "$SSH_PORT" -i "$SSH_KEY" \
-    -o StrictHostKeyChecking=accept-new \
-    -o UserKnownHostsFile=/root/.ssh/known_hosts \
-    -o ConnectTimeout=5 \
-    "$REMOTE_HOST" "exit" >/dev/null 2>&1; then
-    echo "$(CURRENT_TIME) | 🔓 Remote connection OK."
+	-o StrictHostKeyChecking=accept-new \
+	-o UserKnownHostsFile=/root/.ssh/known_hosts \
+	-o ConnectTimeout=5 \
+	"$REMOTE_HOST" "exit" >/dev/null 2>&1; then
+	echo "$(CURRENT_TIME) | 🔓 Remote connection OK."
 else
-    echo "$(CURRENT_TIME) | 🔐 WARNING: SSH connectivity test failed."
-    echo "$(CURRENT_TIME) | ❗ NOTE: This may not indicate a real failure — rsync may still succeed later."
+	echo "$(CURRENT_TIME) | 🔐 WARNING: SSH connectivity test failed."
+	echo "$(CURRENT_TIME) | ❗ NOTE: This may not indicate a real failure — rsync may still succeed later."
 fi
 
 echo "-"
@@ -62,49 +62,55 @@ echo "-"
 > "$EVENTS_FILE"
 
 cleanup() {
-    echo "$(CURRENT_TIME) | 🛑 Shutting down watcher..."
-    pkill -P $$ || true
-    rm -f "$EVENTS_FILE"
-    echo "$(CURRENT_TIME) | ✔️ Clean exit."
+	echo "$(CURRENT_TIME) | 🛑 Shutting down watcher..."
+	pkill -P $$ || true
+	rm -f "$EVENTS_FILE"
+	echo "$(CURRENT_TIME) | ✔️ Clean exit."
 	echo "-"
-    exit 0
+	exit 0
 }
 trap cleanup SIGINT SIGTERM EXIT
 
 inotifywait -m -r -q -e close_write -e moved_to --format '%w%f' "$SOURCE_DIR" |
 
 while read -r absolute_path; do  
-    if [ -f "$absolute_path" ]; then    
-        relative_path="${absolute_path#$SOURCE_DIR/}"
-		
+	if [ -f "$absolute_path" ]; then    
+		relative_path="${absolute_path#$SOURCE_DIR/}"
 		# echo "$(CURRENT_TIME) | 🔍 Detected new file: $relative_path"
-
-        echo "$relative_path" >> "$EVENTS_FILE"
-    fi
+		echo "$relative_path" >> "$EVENTS_FILE"
+	fi
 done &
 
 while true; do
-    sleep "$SYNC_INTERVAL"
+	sleep "$SYNC_INTERVAL"
 
-    if [ ! -s "$EVENTS_FILE" ]; then
-        continue
-    fi
+	if [ ! -s "$EVENTS_FILE" ]; then
+		continue
+	fi
 
-    echo "$(CURRENT_TIME) | 🔍 Detected file changes. Starting batch sync..."
+	echo "$(CURRENT_TIME) | 🔍 Detected file changes. Starting batch sync..."
 
-    if rsync -av --bwlimit="$BWLIMIT_KB" \
-        -e "ssh -p $SSH_PORT -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
-        --remove-source-files \
-        --files-from="$EVENTS_FILE" \
-        "$SOURCE_DIR" \
-        "$REMOTE_DEST" >/dev/null 2>&1; then
-        
-        echo "$(CURRENT_TIME) | 📂 SUCCESS: Batch sync complete. Transferred $(wc -l < "$EVENTS_FILE") files."
+	TMP_EVENTS_FILE="${EVENTS_FILE}.tmp"
+	cp "$EVENTS_FILE" "$TMP_EVENTS_FILE"
+	> "$EVENTS_FILE"
+
+	if rsync -av --bwlimit="$BWLIMIT_KB" \
+		-e "ssh -p $SSH_PORT -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
+		--remove-source-files \
+		--files-from="$TMP_EVENTS_FILE" \
+		"$SOURCE_DIR" \
+		"$REMOTE_DEST" >/dev/null 2>&1; then 	
+		
+		> "$TMP_EVENTS_FILE"
+		
+		echo "$(CURRENT_TIME) | 📂 SUCCESS: Batch sync complete. Transferred $(wc -l < "$TMP_EVENTS_FILE") files."
+		echo "-"	
+	else
+		cat "$TMP_EVENTS_FILE" >> "$EVENTS_FILE"
+		sort -u "$EVENTS_FILE" -o "$EVENTS_FILE"
+		> "$TMP_EVENTS_FILE"
+		
+		echo "$(CURRENT_TIME) | ❌ ERROR: Batch sync failed. Files remain in event list for next attempt."
 		echo "-"
-        
-        > "$EVENTS_FILE"
-    else
-        echo "$(CURRENT_TIME) | ❌ ERROR: Batch sync failed. Files remain in event list for next attempt."
-		echo "-"
-    fi
+	fi
 done
