@@ -3,7 +3,9 @@ name: Build and Publish Docker Image
 on:
   push:
     branches:
+      # Trigger on push to both main and beta
       - main
+      - beta
   workflow_dispatch:
 
 jobs:
@@ -18,6 +20,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Determine Docker Image Tag
+        id: determine_tag
+        run: |
+          # Use 'latest' for the main branch, and the branch name for all others (e.g., 'beta')
+          IMAGE_TAG="${{ github.ref_name == 'main' && 'latest' || github.ref_name }}"
+          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "Image tag set to: $IMAGE_TAG"
+          
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -30,4 +40,5 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/buzzmoody/transfer-watcher:latest
+          # Construct the full tag using the dynamically determined tag from the previous step
+          tags: ghcr.io/buzzmoody/transfer-watcher:${{ steps.determine_tag.outputs.tag }}
