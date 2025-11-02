@@ -117,10 +117,10 @@ while true; do
 		"$SOURCE_DIR" \
 		"$REMOTE_DEST" >/dev/null 2>&1; then 	
 		
-		> "$TMP_EVENTS_FILE"
-		
 		echo "$(CURRENT_TIME) | 📂 SUCCESS: Batch sync complete. Transferred $(wc -l < "$TMP_EVENTS_FILE") files."
-		echo "-"	
+		echo "-"
+		
+		> "$TMP_EVENTS_FILE"
 	else
 		cat "$TMP_EVENTS_FILE" >> "$EVENTS_FILE"
 		sort -u "$EVENTS_FILE" -o "$EVENTS_FILE"
