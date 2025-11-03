@@ -53,7 +53,7 @@ echo "Destination:         📥 $REMOTE_DEST"
 echo "Bandwidth limit:     🌐 ${BWLIMIT_KB} KB/s (${BWLIMIT_MB} Mbit/s)"
 echo "Sync interval:       ⏰ ${SYNC_INTERVAL}s"
 echo "-"
-echo "$(CURRENT_TIME) | 🔌 Starting transfer watcher"
+echo "$(CURRENT_TIME) | 🟢 Starting transfer watcher"
 
 for cmd in inotifywait rsync ssh; do
 	if ! command -v "$cmd" &>/dev/null; then
