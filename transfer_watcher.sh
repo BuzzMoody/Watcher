@@ -40,7 +40,7 @@ check_unsynced_files() {
 	after_count=$(wc -l < "$EVENTS_FILE" 2>/dev/null || echo 0)
 
 	if [ "$before_count" -eq "$after_count" ]; then
-		echo "$(CURRENT_TIME) | ✅ No unsynced files found."
+		echo "$(CURRENT_TIME) | 📂 No unsynced files found."
 	else
 		echo "$(CURRENT_TIME) | 📦 Found $((after_count - before_count)) unsynced file(s)."
 	fi
@@ -127,7 +127,7 @@ while true; do
 		"$SOURCE_DIR" \
 		"$REMOTE_DEST" >/dev/null 2>&1; then 	
 		
-		echo "$(CURRENT_TIME) | 📂 SUCCESS: Batch sync complete. Transferred $(wc -l < "$TMP_EVENTS_FILE") files."
+		echo "$(CURRENT_TIME) | ✔️ SUCCESS: Batch sync complete. Transferred $(wc -l < "$TMP_EVENTS_FILE") files."
 		echo "-"
 		
 		> "$TMP_EVENTS_FILE"
