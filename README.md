@@ -14,8 +14,8 @@
 
 | Variable | Description | Required | Default |
 |-----------|-------------|-----------|----------|
-| `SOURCE_DIR` | Local directory to monitor for changes | ✅ | — |
-| `REMOTE_DEST` | Remote rsync destination (`user@host:/path`) | ✅ | — |
+| `REMOTE_DEST` | Remote rsync destination (`user@hostname:/data/backup`). Use an IP address if hostname lookup fails. | ✅ | — |
+| `SSH_PORT` | Remote server's SSH port | ❌ | `222` |
 | `BWLIMIT_KB` | Bandwidth limit in KB/s | ❌ | `9375` |
 | `SYNC_INTERVAL` | Interval between sync checks (seconds) | ❌ | `10` |
 
@@ -29,13 +29,15 @@ services:
     container_name: watcher
     restart: always
     environment:
-      - SOURCE_DIR=/data/source
-      - REMOTE_DEST=user@remotehost:/data/backup
+      - REMOTE_DEST=user@hostname:/data/backup
+      - SSH_PORT=222
       - BWLIMIT_KB=9375
       - SYNC_INTERVAL=10
     volumes:
-      - /path/to/local/source:/data/source
-      - /path/to/ssh/key/id_rsa_nas_backup:/root/.ssh/id_rsa_nas_backup:ro
+      # the local directory you want to transfer files from
+      - /path/to/local/source:/transfer
+      # your SSH private key to the remote server
+      - /path/to/ssh/key/id_rsa:/root/.ssh/id_rsa:ro
 ```
 
 ## Install from the command line
