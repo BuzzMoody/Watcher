@@ -14,7 +14,7 @@
 
 | Variable | Description | Required | Default |
 |-----------|-------------|-----------|----------|
-| `REMOTE_DEST` | Remote rsync destination (`user@hostname:/data/backup`). It's better to use an IP instead of a hostname if possible. | ✅ | — |
+| `REMOTE_DEST` | Remote rsync destination (`user@hostname:/data/backup`). Use an IP address if hostname lookup fails. | ✅ | — |
 | `SSH_PORT` | Remote server's SSH port | ❌ | `222` |
 | `BWLIMIT_KB` | Bandwidth limit in KB/s | ❌ | `9375` |
 | `SYNC_INTERVAL` | Interval between sync checks (seconds) | ❌ | `10` |
@@ -36,7 +36,7 @@ services:
     volumes:
       # the local directory you want to transfer files from
       - /path/to/local/source:/transfer
-      # your ssh private key to the remote server
+      # your SSH private key to the remote server
       - /path/to/ssh/key/id_rsa:/root/.ssh/id_rsa:ro
 ```
 
