@@ -20,6 +20,28 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # --- UPDATED STEP: 1/2 Setup PHP ---
+      - name: Setup PHP Environment
+        # This action installs the specified PHP version and makes the 'php' command available,
+        # along with the necessary extensions for curl and json operations.
+        # ADJUST '8.3' if your project uses a different PHP version.
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          # Removed 'tools: composer' and added common extensions
+          extensions: curl, json 
+
+      # --- NEW STEP: 2/2 Run PHP Syntax Check ---
+      - name: Run PHP Syntax Check on all files
+        # The 'php -l' command (lint) checks for syntax errors.
+        # We use 'find' and 'xargs' to efficiently check every .php file recursively.
+        # The '-not -path "./vendor/*"' part ensures we skip checking installed vendor dependencies.
+        run: |
+          echo "Starting PHP syntax linting..."
+          find . -name "*.php" -not -path "./vendor/*" -print0 | xargs -0 -n 1 php -l
+        
+      # If the previous step fails (i.e., PHP syntax error is found), the job will stop here!
+
       - name: Determine Docker Image Tag
         id: determine_tag
         run: |
