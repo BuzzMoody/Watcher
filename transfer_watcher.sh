@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-SOURCE_DIR="${SOURCE_DIR:?ERROR: SOURCE_DIR environment variable not set.}"
+SOURCE_DIR="/transfer"
 REMOTE_DEST="${REMOTE_DEST:?ERROR: REMOTE_DEST environment variable not set.}"
 
 SSH_KEY="/root/.ssh/id_rsa"
