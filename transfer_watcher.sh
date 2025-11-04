@@ -8,10 +8,8 @@ set -euo pipefail
 SOURCE_DIR="${SOURCE_DIR:?ERROR: SOURCE_DIR environment variable not set.}"
 REMOTE_DEST="${REMOTE_DEST:?ERROR: REMOTE_DEST environment variable not set.}"
 
-SOURCE_DIR=$(echo "$SOURCE_DIR" | sed 's/\/$//')
-
-SSH_KEY="/root/.ssh/id_rsa_nas_backup"
-SSH_PORT="222"
+SSH_KEY="/root/.ssh/id_rsa"
+SSH_PORT="${SSH_PORT:-222}"
 
 BWLIMIT_KB="${BWLIMIT_KB:-9375}"
 BWLIMIT_MB=$(echo "scale=0; ${BWLIMIT_KB} / 125" | bc)
@@ -33,6 +31,7 @@ check_unsynced_files() {
 		relative_path="${absolute_path#$SOURCE_DIR/}"
 		if ! grep -Fxq -- "$relative_path" "$EVENTS_FILE"; then
 			echo "$relative_path" >> "$EVENTS_FILE"
+			sort -u "$EVENTS_FILE" -o "$EVENTS_FILE"
 			echo "$(CURRENT_TIME) | ➕ Added unsynced file: $relative_path"
 		fi
 	done
@@ -104,6 +103,7 @@ while read -r absolute_path; do
 		relative_path="${absolute_path#$SOURCE_DIR/}"
 		# echo "$(CURRENT_TIME) | 🔍 Detected new file: $relative_path"
 		echo "$relative_path" >> "$EVENTS_FILE"
+		sort -u "$EVENTS_FILE" -o "$EVENTS_FILE"
 	fi
 done &
 
