@@ -52,7 +52,7 @@ echo "Destination:         📥 $REMOTE_DEST"
 echo "Bandwidth limit:     🌐 ${BWLIMIT_KB} KB/s (${BWLIMIT_MB} Mbit/s)"
 echo "Sync interval:       ⏰ ${SYNC_INTERVAL}s"
 echo "-"
-echo "$(CURRENT_TIME) | 🟢 Starting transfer watcher"
+echo "$(CURRENT_TIME) | 🟢 Starting transfer watcher..."
 
 for cmd in inotifywait rsync ssh; do
 	if ! command -v "$cmd" &>/dev/null; then
@@ -114,7 +114,7 @@ while true; do
 		continue
 	fi
 
-	echo "$(CURRENT_TIME) | 🔍 Detected file changes. Starting batch sync..."
+	echo "$(CURRENT_TIME) | 🔍 Detected file changes. Starting batch transfer..."
 
 	TMP_EVENTS_FILE="${EVENTS_FILE}.tmp"
 	cp "$EVENTS_FILE" "$TMP_EVENTS_FILE"
@@ -127,7 +127,7 @@ while true; do
 		"$SOURCE_DIR" \
 		"$REMOTE_DEST" >/dev/null 2>&1; then 	
 		
-		echo "$(CURRENT_TIME) | ✔️ SUCCESS: Batch sync complete. Transferred $(wc -l < "$TMP_EVENTS_FILE") files."
+		echo "$(CURRENT_TIME) | ✔️ SUCCESS: Batch transfer complete. Transferred $(wc -l < "$TMP_EVENTS_FILE") files."
 		echo "-"
 		
 		> "$TMP_EVENTS_FILE"
@@ -136,7 +136,7 @@ while true; do
 		sort -u "$EVENTS_FILE" -o "$EVENTS_FILE"
 		> "$TMP_EVENTS_FILE"
 		
-		echo "$(CURRENT_TIME) | ❌ ERROR: Batch sync failed. Files remain in event list for next attempt."
+		echo "$(CURRENT_TIME) | ❌ ERROR: Batch transfer failed. Files remain in event list for next attempt."
 		echo "-"
 	fi
 done
