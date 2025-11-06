@@ -52,7 +52,7 @@ echo "Destination:         📥 $REMOTE_DEST"
 echo "Bandwidth limit:     🌐 ${BWLIMIT_KB} KB/s (${BWLIMIT_MB} Mbit/s)"
 echo "Sync interval:       ⏰ ${SYNC_INTERVAL}s"
 echo "-"
-echo "$(CURRENT_TIME) | 🟢 Starting transfer watcher..."
+echo "$(CURRENT_TIME) | 🟢 Starting transfer watcher…"
 
 for cmd in inotifywait rsync ssh; do
 	if ! command -v "$cmd" &>/dev/null; then
@@ -68,7 +68,7 @@ chmod 600 /root/.ssh/known_hosts
 
 REMOTE_HOST="${REMOTE_DEST%%:*}"
 
-echo "$(CURRENT_TIME) | 🔑 Checking SSH connectivity..."
+echo "$(CURRENT_TIME) | 🔑 Checking SSH connectivity…"
 if ssh -p "$SSH_PORT" -i "$SSH_KEY" \
 	-o StrictHostKeyChecking=accept-new \
 	-o UserKnownHostsFile=/root/.ssh/known_hosts \
@@ -87,7 +87,7 @@ echo "-"
 check_unsynced_files
 
 cleanup() {
-	echo "$(CURRENT_TIME) | 🛑 Shutting down watcher..."
+	echo "$(CURRENT_TIME) | 🛑 Shutting down watcher…"
 	pkill -P $$ || true
 	rm -f "$EVENTS_FILE"
 	echo "$(CURRENT_TIME) | ✔️ Clean exit."
@@ -114,7 +114,7 @@ while true; do
 		continue
 	fi
 
-	echo "$(CURRENT_TIME) | 🔍 Detected file changes. Starting batch transfer..."
+	echo "$(CURRENT_TIME) | 🔍 Detected file changes. Starting batch transfer…"
 
 	TMP_EVENTS_FILE="${EVENTS_FILE}.tmp"
 	cp "$EVENTS_FILE" "$TMP_EVENTS_FILE"
