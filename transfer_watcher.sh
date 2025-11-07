@@ -23,7 +23,7 @@ CURRENT_TIME() {
 }
 
 check_unsynced_files() {
-	echo "$(CURRENT_TIME) | 🔎 Checking for unsynced files..."
+	echo "$(CURRENT_TIME) | 🔎 Checking for unsynced files…"
 
 	before_count=$(wc -l < "$EVENTS_FILE" 2>/dev/null || echo 0)
 
