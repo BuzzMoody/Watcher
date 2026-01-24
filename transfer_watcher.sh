@@ -137,6 +137,8 @@ while true; do
 		> "$TMP_EVENTS_FILE"
 		
 		echo "$(CURRENT_TIME) | ❌ ERROR: Batch transfer failed. Files remain in event list for next attempt."
+		echo "$(CURRENT_TIME) | ⏳ Waiting 15 minutes before the next attempt..."	
 		echo "-"
+		sleep 15m
 	fi
 done
