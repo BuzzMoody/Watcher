@@ -45,3 +45,5 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/buzzmoody/transfer-watcher:${{ steps.determine_tag.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

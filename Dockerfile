@@ -2,7 +2,17 @@
 FROM rust:alpine AS builder
 RUN apk add --no-cache musl-dev pkgconfig openssl-dev openssl-libs-static libssh2-dev zlib-dev zlib-static
 WORKDIR /app
-COPY . .
+
+# Step 1: Cache dependencies by building a dummy project
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN RUSTFLAGS="-C target-feature=+crt-static" PKG_CONFIG_ALL_STATIC=1 cargo build --release
+RUN rm -rf src
+
+# Step 2: Copy actual source code and build
+COPY src ./src
+# Touch the main file to invalidate the dummy build cache
+RUN touch src/main.rs
 # Compile a fully statically linked binary
 RUN RUSTFLAGS="-C target-feature=+crt-static" PKG_CONFIG_ALL_STATIC=1 cargo build --release
 
