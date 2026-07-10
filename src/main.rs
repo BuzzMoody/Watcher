@@ -1,11 +1,12 @@
 use chrono::Local;
+use crossbeam_channel::unbounded;
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use notify::event::{AccessKind, AccessMode, ModifyKind, RenameMode};
-use ssh2::Session;
+use ssh2::{Session, OpenFlags, OpenType};
 use std::collections::HashSet;
 use std::env;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{Read, Write, Seek, SeekFrom};
 use std::net::TcpStream;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -34,6 +35,53 @@ fn current_time() -> String {
     clean
 }
 
+struct TokenBucket {
+    tokens: Mutex<f64>,
+    last_update: Mutex<Instant>,
+    rate_per_sec: f64,
+    capacity: f64,
+}
+
+impl TokenBucket {
+    fn new(rate_per_sec: f64, capacity: f64) -> Self {
+        Self {
+            tokens: Mutex::new(capacity),
+            last_update: Mutex::new(Instant::now()),
+            rate_per_sec,
+            capacity,
+        }
+    }
+
+    fn consume(&self, tokens: f64) {
+        if self.rate_per_sec <= 0.0 {
+            return;
+        }
+        loop {
+            let mut current_tokens = self.tokens.lock().unwrap();
+            let mut last_update = self.last_update.lock().unwrap();
+            let now = Instant::now();
+            let elapsed = now.duration_since(*last_update).as_secs_f64();
+            
+            *current_tokens += elapsed * self.rate_per_sec;
+            if *current_tokens > self.capacity {
+                *current_tokens = self.capacity;
+            }
+            *last_update = now;
+
+            if *current_tokens >= tokens {
+                *current_tokens -= tokens;
+                return;
+            } else {
+                let deficit = tokens - *current_tokens;
+                let wait_time = deficit / self.rate_per_sec;
+                drop(current_tokens);
+                drop(last_update);
+                thread::sleep(Duration::from_secs_f64(wait_time));
+            }
+        }
+    }
+}
+
 fn connect_ssh(remote_dest: &str, ssh_port: u16, ssh_key: &str) -> Result<Session, String> {
     let parts: Vec<&str> = remote_dest.split(':').collect();
     if parts.len() < 2 {
@@ -51,8 +99,8 @@ fn connect_ssh(remote_dest: &str, ssh_port: u16, ssh_key: &str) -> Result<Sessio
         Ok(t) => t,
         Err(e) => return Err(format!("Failed to connect to {}:{} - {}", hostname, ssh_port, e)),
     };
-    tcp.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-    tcp.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
+    tcp.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
+    tcp.set_write_timeout(Some(Duration::from_secs(30))).unwrap();
 
     let mut sess = match Session::new() {
         Ok(s) => s,
@@ -68,6 +116,11 @@ fn connect_ssh(remote_dest: &str, ssh_port: u16, ssh_key: &str) -> Result<Sessio
     }
 
     Ok(sess)
+}
+
+enum JobResult {
+    Success(String),
+    Failed(String),
 }
 
 fn main() {
@@ -93,6 +146,7 @@ fn main() {
     let bwlimit_kb = env::var("BWLIMIT_KB").unwrap_or_else(|_| "9375".to_string()).parse::<u64>().unwrap_or(9375);
     let bwlimit_mb = bwlimit_kb / 125;
     let sync_interval = env::var("SYNC_INTERVAL").unwrap_or_else(|_| "10".to_string()).parse::<u64>().unwrap_or(10);
+    let max_concurrent = env::var("MAX_CONCURRENT_UPLOADS").unwrap_or_else(|_| "4".to_string()).parse::<usize>().unwrap_or(4);
     
     let parts: Vec<&str> = remote_dest.split(':').collect();
     let remote_path = parts[1].to_string();
@@ -101,6 +155,7 @@ fn main() {
     println!("Destination:         📥 {}", remote_dest);
     println!("Bandwidth limit:     🌐 {} KB/s ({} Mbit/s)", bwlimit_kb, bwlimit_mb);
     println!("Sync interval:       ⏰ {}s", sync_interval);
+    println!("Concurrency:         ⚡ {} streams", max_concurrent);
     println!("-");
     println!("{} | 🟢 Starting transfer watcher...", current_time());
 
@@ -168,6 +223,153 @@ fn main() {
         }
     });
 
+    let bwlimit_bytes_per_sec = (bwlimit_kb * 1024) as f64;
+    let chunk_size = 64 * 1024;
+    let capacity = if bwlimit_bytes_per_sec > 0.0 {
+        bwlimit_bytes_per_sec.max(chunk_size as f64 * max_concurrent as f64)
+    } else {
+        0.0
+    };
+    let bucket = Arc::new(TokenBucket::new(bwlimit_bytes_per_sec, capacity));
+
+    let (task_tx, task_rx) = unbounded::<String>();
+    let (result_tx, result_rx) = unbounded::<JobResult>();
+
+    for _ in 0..max_concurrent {
+        let rx = task_rx.clone();
+        let tx = result_tx.clone();
+        let bucket = bucket.clone();
+        let remote_dest = remote_dest.clone();
+        let ssh_port = ssh_port;
+        let ssh_key = ssh_key.clone();
+        let source_dir = source_dir.clone();
+        let remote_path = remote_path.clone();
+
+        thread::spawn(move || {
+            let mut sess_opt: Option<Session> = None;
+
+            for rel_path in rx {
+                let local_path = Path::new(&source_dir).join(&rel_path);
+                if !local_path.exists() {
+                    let _ = tx.send(JobResult::Success(rel_path));
+                    continue;
+                }
+
+                if sess_opt.is_none() {
+                    sess_opt = connect_ssh(&remote_dest, ssh_port, &ssh_key).ok();
+                }
+
+                let mut success = false;
+                if let Some(sess) = &sess_opt {
+                    if let Ok(sftp) = sess.sftp() {
+                        let dest_path = Path::new(&remote_path).join(&rel_path);
+                        let mut final_dest = dest_path.clone();
+
+                        if let Some(parent) = final_dest.parent() {
+                            let _ = sess.channel_session().and_then(|mut ch| {
+                                ch.exec(&format!("mkdir -p \"{}\"", parent.display())).unwrap();
+                                Ok(())
+                            });
+                        }
+
+                        let mut duplicate_found = false;
+                        if let Ok(stat) = sftp.stat(&final_dest) {
+                            if let Ok(local_meta) = fs::metadata(&local_path) {
+                                if stat.size.unwrap_or(0) == local_meta.len() {
+                                    println!("{} | ⚠️ DUPLICATE: Remote file {} already exists with the same size. Skipping transfer and deleting local copy.", current_time(), final_dest.display());
+                                    let _ = fs::remove_file(&local_path);
+                                    duplicate_found = true;
+                                    success = true;
+                                }
+                            }
+
+                            if !duplicate_found {
+                                let now = Local::now().format("%Y%m%d_%H%M%S");
+                                let ext = final_dest.extension().and_then(|e| e.to_str()).unwrap_or("");
+                                let stem = final_dest.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+                                let new_name = if ext.is_empty() {
+                                    format!("{}_{}", stem, now)
+                                } else {
+                                    format!("{}_{}.{}", stem, now, ext)
+                                };
+                                final_dest = final_dest.with_file_name(new_name);
+                            }
+                        }
+
+                        if !duplicate_found {
+                            let mut temp_dest = final_dest.clone();
+                            let temp_name = format!("{}.transferring", final_dest.file_name().unwrap().to_string_lossy());
+                            temp_dest.set_file_name(temp_name);
+
+                            let mut start_pos = 0;
+                            if let Ok(stat) = sftp.stat(&temp_dest) {
+                                start_pos = stat.size.unwrap_or(0);
+                            }
+
+                            if let Ok(mut local_f) = fs::File::open(&local_path) {
+                                if start_pos > 0 {
+                                    if let Ok(local_meta) = local_f.metadata() {
+                                        if start_pos <= local_meta.len() {
+                                            println!("{} | ⏪ RESUMING: {} from byte {}", current_time(), rel_path, start_pos);
+                                            let _ = local_f.seek(SeekFrom::Start(start_pos));
+                                        } else {
+                                            start_pos = 0;
+                                        }
+                                    }
+                                }
+
+                                let remote_f_res = if start_pos > 0 {
+                                    sftp.open_mode(&temp_dest, OpenFlags::WRITE | OpenFlags::APPEND, 0o644, OpenType::File)
+                                } else {
+                                    sftp.create(&temp_dest)
+                                };
+
+                                if let Ok(mut remote_f) = remote_f_res {
+                                    let mut buffer = vec![0; chunk_size];
+                                    let mut transfer_ok = true;
+
+                                    loop {
+                                        let n = match local_f.read(&mut buffer) {
+                                            Ok(0) => break,
+                                            Ok(n) => n,
+                                            Err(_) => {
+                                                transfer_ok = false;
+                                                break;
+                                            }
+                                        };
+
+                                        bucket.consume(n as f64);
+
+                                        if remote_f.write_all(&buffer[..n]).is_err() {
+                                            transfer_ok = false;
+                                            break;
+                                        }
+                                    }
+
+                                    if transfer_ok {
+                                        // sftp.rename flags: Some(RenameFlags::OVERWRITE | RenameFlags::ATOMIC)
+                                        // Some ssh2 versions don't take Option, let's use None for safety
+                                        let _ = sftp.rename(&temp_dest, &final_dest, None);
+                                        let _ = fs::remove_file(&local_path);
+                                        success = true;
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        sess_opt = None; // Force reconnect
+                    }
+                }
+
+                if success {
+                    let _ = tx.send(JobResult::Success(rel_path));
+                } else {
+                    let _ = tx.send(JobResult::Failed(rel_path));
+                }
+            }
+        });
+    }
+
     loop {
         thread::sleep(Duration::from_secs(sync_interval));
         let mut current_events = HashSet::new();
@@ -179,132 +381,34 @@ fn main() {
             std::mem::swap(&mut *guard, &mut current_events);
         }
 
-        println!("{} | 🔍 Detected file changes. Starting batch transfer...", current_time());
+        let total_files = current_events.len();
+        println!("{} | 🔍 Detected file changes. Starting batch transfer of {} files...", current_time(), total_files);
 
-        match connect_ssh(&remote_dest, ssh_port, &ssh_key) {
-            Ok(sess) => {
-                let sftp = match sess.sftp() {
-                    Ok(s) => s,
-                    Err(_) => {
-                        println!("{} | ❌ ERROR: Failed to init SFTP.", current_time());
-                        events.lock().unwrap().extend(current_events);
-                        println!("-");
-                        continue;
-                    }
-                };
+        for rel_path in &current_events {
+            task_tx.send(rel_path.clone()).unwrap();
+        }
 
-                let mut success_count = 0;
-                let mut failed_events = HashSet::new();
-                let bwlimit_bytes = bwlimit_kb * 1024;
-                let chunk_size = 32 * 1024;
+        let mut success_count = 0;
+        let mut failed_events = HashSet::new();
 
-                for rel_path in current_events {
-                    let local_path = Path::new(&source_dir).join(&rel_path);
-                    if !local_path.exists() {
-                        continue;
-                    }
-
-                    let dest_path = Path::new(&remote_path).join(&rel_path);
-                    let mut final_dest = dest_path.clone();
-
-                    if let Some(parent) = final_dest.parent() {
-                        let _ = sess.channel_session().and_then(|mut ch| {
-                            ch.exec(&format!("mkdir -p \"{}\"", parent.display())).unwrap();
-                            Ok(())
-                        });
-                    }
-
-                    if let Ok(stat) = sftp.stat(&final_dest) {
-                        if let Ok(local_meta) = fs::metadata(&local_path) {
-                            if stat.size.unwrap_or(0) == local_meta.len() {
-                                println!("{} | ⚠️ DUPLICATE: Remote file {} already exists with the same size. Skipping transfer and deleting local copy.", current_time(), final_dest.display());
-                                let _ = fs::remove_file(&local_path);
-                                success_count += 1;
-                                continue;
-                            }
-                        }
-
-                        let now = Local::now().format("%Y%m%d_%H%M%S");
-                        let ext = final_dest.extension().and_then(|e| e.to_str()).unwrap_or("");
-                        let stem = final_dest.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
-                        let new_name = if ext.is_empty() {
-                            format!("{}_{}", stem, now)
-                        } else {
-                            format!("{}_{}.{}", stem, now, ext)
-                        };
-                        final_dest = final_dest.with_file_name(new_name);
-                    }
-
-                    let mut local_f = match fs::File::open(&local_path) {
-                        Ok(f) => f,
-                        Err(_) => {
-                            failed_events.insert(rel_path);
-                            continue;
-                        }
-                    };
-
-                    let mut remote_f = match sftp.create(&final_dest) {
-                        Ok(f) => f,
-                        Err(_) => {
-                            failed_events.insert(rel_path);
-                            continue;
-                        }
-                    };
-
-                    let mut buffer = vec![0; chunk_size];
-                    let mut bytes_sent_in_second = 0;
-                    let mut second_start = Instant::now();
-                    let mut transfer_ok = true;
-
-                    loop {
-                        let n = match local_f.read(&mut buffer) {
-                            Ok(0) => break,
-                            Ok(n) => n,
-                            Err(_) => {
-                                transfer_ok = false;
-                                break;
-                            }
-                        };
-
-                        if remote_f.write_all(&buffer[..n]).is_err() {
-                            transfer_ok = false;
-                            break;
-                        }
-
-                        if bwlimit_bytes > 0 {
-                            bytes_sent_in_second += n as u64;
-                            if bytes_sent_in_second >= bwlimit_bytes {
-                                let elapsed = second_start.elapsed();
-                                if elapsed < Duration::from_secs(1) {
-                                    thread::sleep(Duration::from_secs(1) - elapsed);
-                                }
-                                second_start = Instant::now();
-                                bytes_sent_in_second = 0;
-                            }
-                        }
-                    }
-
-                    if transfer_ok {
-                        let _ = fs::remove_file(&local_path);
-                        success_count += 1;
-                    } else {
-                        failed_events.insert(rel_path);
-                    }
-                }
-
-                if failed_events.is_empty() {
-                    println!("{} | ✔️ SUCCESS: Batch transfer complete. Transferred {} files.", current_time(), success_count);
-                } else {
-                    println!("{} | ❌ ERROR: Batch transfer had {} failures. Files remain in event list.", current_time(), failed_events.len());
-                    events.lock().unwrap().extend(failed_events);
-                }
-                println!("-");
-            },
-            Err(e) => {
-                println!("{} | ❌ ERROR: Batch transfer failed. ({})", current_time(), e);
-                events.lock().unwrap().extend(current_events);
-                println!("-");
+        for _ in 0..total_files {
+            match result_rx.recv() {
+                Ok(JobResult::Success(_)) => {
+                    success_count += 1;
+                },
+                Ok(JobResult::Failed(rel_path)) => {
+                    failed_events.insert(rel_path);
+                },
+                Err(_) => break,
             }
         }
+
+        if failed_events.is_empty() {
+            println!("{} | ✔️ SUCCESS: Batch transfer complete. Transferred {} files.", current_time(), success_count);
+        } else {
+            println!("{} | ❌ ERROR: Batch transfer had {} failures. Files remain in event list.", current_time(), failed_events.len());
+            events.lock().unwrap().extend(failed_events);
+        }
+        println!("-");
     }
 }
