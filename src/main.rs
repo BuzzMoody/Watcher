@@ -99,14 +99,13 @@ fn connect_ssh(remote_dest: &str, ssh_port: u16, ssh_key: &str) -> Result<Sessio
         Ok(t) => t,
         Err(e) => return Err(format!("Failed to connect to {}:{} - {}", hostname, ssh_port, e)),
     };
-    tcp.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
-    tcp.set_write_timeout(Some(Duration::from_secs(30))).unwrap();
 
     let mut sess = match Session::new() {
         Ok(s) => s,
         Err(e) => return Err(format!("Failed to create SSH session - {}", e)),
     };
     sess.set_tcp_stream(tcp);
+    sess.set_timeout(30000);
     if let Err(e) = sess.handshake() {
         return Err(format!("SSH handshake failed - {}", e));
     }
