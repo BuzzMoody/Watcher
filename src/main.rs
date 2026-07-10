@@ -214,7 +214,16 @@ fn main() {
                         });
                     }
 
-                    if sftp.stat(&final_dest).is_ok() {
+                    if let Ok(stat) = sftp.stat(&final_dest) {
+                        if let Ok(local_meta) = fs::metadata(&local_path) {
+                            if stat.size.unwrap_or(0) == local_meta.len() {
+                                println!("{} | ⚠️ DUPLICATE: Remote file {} already exists with the same size. Skipping transfer and deleting local copy.", current_time(), final_dest.display());
+                                let _ = fs::remove_file(&local_path);
+                                success_count += 1;
+                                continue;
+                            }
+                        }
+
                         let now = Local::now().format("%Y%m%d_%H%M%S");
                         let ext = final_dest.extension().and_then(|e| e.to_str()).unwrap_or("");
                         let stem = final_dest.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
