@@ -7,7 +7,7 @@ COPY . .
 RUN RUSTFLAGS="-C target-feature=+crt-static" PKG_CONFIG_ALL_STATIC=1 cargo build --release
 
 # Final Stage
-FROM gcr.io/distroless/static-debian12:latest
+FROM gcr.io/distroless/static-debian13:latest
 
 # Copy the compiled binary from the builder
 COPY --from=builder /app/target/release/transfer-watcher /usr/local/bin/transfer-watcher
