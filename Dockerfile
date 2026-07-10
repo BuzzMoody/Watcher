@@ -1,34 +1,20 @@
-FROM alpine:latest
-
-# Default timezone
-ENV TZ=Australia/Melbourne
-
-# Install required packages including tzdata (keep it!)
-RUN apk add --no-cache \
-	tzdata \
-	rsync \
-	openssh-client \
-	inotify-tools \
-	bash
-
-# Set timezone
-RUN cp /usr/share/zoneinfo/${TZ} /etc/localtime \
-	&& echo "${TZ}" > /etc/timezone
-
-# Set working directory
+# Build Stage
+FROM rust:alpine AS builder
+RUN apk add --no-cache musl-dev pkgconfig openssl-dev libssh2-dev
 WORKDIR /app
+COPY . .
+RUN cargo build --release
 
-# Copy watcher script and health check script
-COPY transfer_watcher.sh /app/transfer_watcher.sh
-COPY health_check.sh /app/health_check.sh
-RUN chmod +x /app/transfer_watcher.sh /app/health_check.sh
+# Final Stage
+FROM alpine:latest
+RUN apk add --no-cache tzdata libssh2 libgcc
+COPY --from=builder /app/target/release/transfer-watcher /usr/local/bin/transfer-watcher
 
-# Ensure .ssh folder exists
+# Set up SSH directory
 RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
 
-# Health check instruction
-HEALTHCHECK --interval=60s --timeout=5s --start-period=30s --retries=3 \
-	CMD ["/app/health_check.sh"]
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD /usr/local/bin/transfer-watcher --health || exit 1
 
-# Run the script directly
-CMD ["/app/transfer_watcher.sh"]
+ENTRYPOINT ["/usr/local/bin/transfer-watcher"]

@@ -1,0 +1,11 @@
+[package]
+name = "transfer-watcher"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+notify = "6.1.1"
+ssh2 = "0.9.4"
+chrono = "0.4.31"
+walkdir = "2.4.0"
