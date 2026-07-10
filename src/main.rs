@@ -35,6 +35,17 @@ fn current_time() -> String {
     clean
 }
 
+fn is_ignored_file(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    if lower == "thumbs.db" || lower == "desktop.ini" || lower == ".ds_store" {
+        return true;
+    }
+    if lower.starts_with("._") {
+        return true;
+    }
+    false
+}
+
 struct TokenBucket {
     tokens: Mutex<f64>,
     last_update: Mutex<Instant>,
@@ -177,6 +188,12 @@ fn main() {
     for entry in walkdir::WalkDir::new(&source_dir).into_iter().filter_map(|e| e.ok()) {
         if entry.file_type().is_file() {
             if let Ok(rel_path) = entry.path().strip_prefix(&source_dir) {
+                if let Some(file_name) = rel_path.file_name().and_then(|n| n.to_str()) {
+                    if is_ignored_file(file_name) {
+                        let _ = fs::remove_file(entry.path());
+                        continue;
+                    }
+                }
                 events.lock().unwrap().insert(rel_path.to_string_lossy().to_string());
                 println!("{} | ➕ Added unsynced file: {}", current_time(), rel_path.display());
                 added += 1;
@@ -211,6 +228,12 @@ fn main() {
                         for path in event.paths {
                             if path.is_file() {
                                 if let Ok(rel_path) = path.strip_prefix(&source_dir_clone) {
+                                    if let Some(file_name) = rel_path.file_name().and_then(|n| n.to_str()) {
+                                        if is_ignored_file(file_name) {
+                                            let _ = fs::remove_file(&path);
+                                            continue;
+                                        }
+                                    }
                                     events_clone.lock().unwrap().insert(rel_path.to_string_lossy().to_string());
                                 }
                             }
