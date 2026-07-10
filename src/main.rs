@@ -110,6 +110,7 @@ fn connect_ssh(remote_dest: &str, ssh_port: u16, ssh_key: &str) -> Result<Sessio
         Ok(t) => t,
         Err(e) => return Err(format!("Failed to connect to {}:{} - {}", hostname, ssh_port, e)),
     };
+    let _ = tcp.set_nodelay(true);
 
     let mut sess = match Session::new() {
         Ok(s) => s,
@@ -246,7 +247,7 @@ fn main() {
     });
 
     let bwlimit_bytes_per_sec = (bwlimit_kb * 1024) as f64;
-    let chunk_size = 64 * 1024;
+    let chunk_size = 1024 * 1024;
     let capacity = if bwlimit_bytes_per_sec > 0.0 {
         bwlimit_bytes_per_sec.max(chunk_size as f64 * max_concurrent as f64)
     } else {
