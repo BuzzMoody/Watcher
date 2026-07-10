@@ -6,7 +6,7 @@
 
 - 🕵️‍♂️ Watches for file changes natively using filesystem events.
 - 🚀 Transfers files in batches via high-performance native SFTP.
-- 🔐 Secure minimal Docker image (Alpine Linux).
+- 🔐 Ultra-secure, shell-free Docker image (Google Distroless Static, under ~3MB!).
 - 🌐 Configurable bandwidth limit natively built into the transfer engine.
 - 🧹 Automatically removes source files after successful transfer.
 - 🛡️ **Collision Handling**: Automatically detects if a remote file already exists and appends a timestamp (e.g., `file_20260710_115000.txt`) to prevent accidental overwrites.
