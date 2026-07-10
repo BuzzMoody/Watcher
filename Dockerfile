@@ -1,6 +1,6 @@
 # Build Stage
 FROM rust:alpine AS builder
-RUN apk add --no-cache musl-dev pkgconfig openssl-dev libssh2-dev
+RUN apk add --no-cache musl-dev pkgconfig openssl-dev openssl-libs-static libssh2-dev zlib-dev zlib-static
 WORKDIR /app
 COPY . .
 RUN cargo build --release
