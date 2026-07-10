@@ -163,7 +163,7 @@ fn main() {
                         }
                     }
                 },
-                Err(e) => println!("watch error: {:?}", e),
+                Err(e) => println!("{} | ❌ ERROR: Watch error: {:?}", current_time(), e),
             }
         }
     });
