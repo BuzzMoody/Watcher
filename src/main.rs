@@ -151,7 +151,6 @@ fn main() {
                         EventKind::Access(AccessKind::Close(AccessMode::Write)) => true,
                         EventKind::Modify(ModifyKind::Name(RenameMode::To)) => true,
                         EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => true,
-                        EventKind::Create(_) => true,
                         _ => false,
                     };
                     if is_write {
