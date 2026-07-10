@@ -248,8 +248,8 @@ fn main() {
         thread::spawn(move || {
             let mut sess_opt: Option<Session> = None;
 
-            for rel_path in rx {
-                let local_path = Path::new(&source_dir).join(&rel_path);
+            for mut rel_path in rx {
+                let mut local_path = Path::new(&source_dir).join(&rel_path);
                 if !local_path.exists() {
                     let _ = tx.send(JobResult::Success(rel_path));
                     continue;
@@ -292,7 +292,14 @@ fn main() {
                                 } else {
                                     format!("{}_{}.{}", stem, now, ext)
                                 };
-                                final_dest = final_dest.with_file_name(new_name);
+                                final_dest = final_dest.with_file_name(&new_name);
+                                
+                                let new_local_path = local_path.with_file_name(&new_name);
+                                if fs::rename(&local_path, &new_local_path).is_ok() {
+                                    local_path = new_local_path;
+                                    rel_path = Path::new(&rel_path).with_file_name(&new_name).to_string_lossy().to_string();
+                                    println!("{} | 🔄 COLLISION: Renamed local file to {} to allow for partial resume.", current_time(), new_name);
+                                }
                             }
                         }
 
